@@ -1,43 +1,46 @@
-# FROM nvidia/cuda:10.1-cudnn7-runtime-ubuntu18.04
-# FROM ubuntu:22.04
-# FROM nvidia/cuda:11.0.3-cudnn8-runtime-ubuntu22.04
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+# Base image: CUDA 11.8 with cuDNN 8 on Ubuntu 22.04 (includes dev‑tools)
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 
-# Setup environment
-ENV DEBIAN_FRONTEND=noninteractive
-WORKDIR /workspace
+# Force Qt (used by Mayavi/VTK) into offscreen rendering mode
+ENV QT_QPA_PLATFORM=offscreen
 
-# Copy helper script
-COPY linux_dependencies_script.sh .
-RUN ./linux_dependencies_script.sh
+# Install system utilities
+RUN apt-get update && apt-get install -y \
+        wget \
+        git \
+        libxrender1 \
+        mesa-common-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Python & pip install
-# RUN apt-get update && apt-get install -y python3.7 python3-pip && \
-#     ln -s /usr/bin/python3 /usr/bin/python && \
-#     pip3 install --upgrade pip setuptools==65.5.1 wheel
+# Set up Miniconda installation directory
+ENV CONDA_DIR=/opt/conda \
+    PATH=/opt/conda/bin:$PATH
 
-RUN apt-get update && apt-get install -y software-properties-common && \
-    add-apt-repository ppa:deadsnakes/ppa && apt-get update && \
-    apt-get install -y python3.7 python3.7-venv python3.7-dev python3-pip && \
-    ln -sf /usr/bin/python3.7 /usr/bin/python && \
-    pip3 install --upgrade pip setuptools==65.5.1 wheel
+# Download and install Miniconda
+RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
+         -O /tmp/miniconda.sh \
+    && bash /tmp/miniconda.sh -b -p $CONDA_DIR \
+    && rm /tmp/miniconda.sh \
+    && conda init bash \
+    && conda config --system --set auto_activate_base false
 
-    
-# Install Python dependencies
-COPY requirements.txt .
-# RUN pip3 install --no-cache-dir --ignore-installed -r requirements.txt
-
-RUN python3.7 -m pip install --upgrade pip && \
-    python3.7 -m pip install --no-cache-dir --ignore-installed -r requirements.txt
-
-# # (Optional) Copy your model/training script into the image
-# COPY . /workspace
-# Clone and install Contact-GraspNet
-RUN git clone https://github.com/NVlabs/contact_graspnet /workspace/contact_graspnet
+# Use bash login shell so that .bashrc (with conda init) is sourced
+SHELL ["/bin/bash", "-lc"]
 
 WORKDIR /workspace/contact_graspnet
 
-# # Default entrypoint (adjust to your train script)
-# CMD ["python", "train.py"]
+# Clone the Contact-GraspNet source
+RUN git clone https://github.com/JohnBrann/contact_graspnet .
 
-CMD ["/bin/bash"]
+# Remove the mayavi pin from environment.yaml (we'll install via conda-forge)
+RUN sed -i '/mayavi==/d' environment.yaml
+
+# Build the conda env and install extras: 
+RUN conda env create -f environment.yaml \
+    && conda install -n contact-graspnet -c conda-forge vtk mayavi matplotlib -y \
+    && conda install -n contact-graspnet numpy=1.23.5 -y
+
+RUN echo "conda activate contact-graspnet" >> ~/.bashrc
+
+# Default to an interactive bash login shell
+CMD ["bash", "-l"]
