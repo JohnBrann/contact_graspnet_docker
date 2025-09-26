@@ -35,12 +35,18 @@ RUN git clone https://github.com/JohnBrann/contact_graspnet .
 # Remove the mayavi pin from environment.yaml (we'll install via conda-forge)
 RUN sed -i '/mayavi==/d' environment.yaml
 
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main \
+ && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
 # Build the conda env and install extras: 
 RUN conda env create -f environment.yaml \
     && conda install -n contact-graspnet -c conda-forge vtk mayavi matplotlib -y \
     && conda install -n contact-graspnet numpy=1.23.5 -y
 
 RUN echo "conda activate contact-graspnet" >> ~/.bashrc
+
+# RUN conda run -n contact-graspnet
+# RUN compile_pointnet_tfops.sh
 
 # Default to an interactive bash login shell
 CMD ["bash", "-l"]
